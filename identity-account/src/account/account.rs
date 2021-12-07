@@ -132,7 +132,7 @@ impl Account {
   }
 
   /// Increments the total number of actions executed by this instance.
-  fn increment_actions(&self) {
+  pub fn increment_actions(&self) {
     self.actions.fetch_add(1, Ordering::SeqCst);
   }
 
@@ -400,7 +400,7 @@ impl Account {
     Ok(())
   }
 
-  async fn save(&self, force: bool) -> Result<()> {
+  pub async fn save(&self, force: bool) -> Result<()> {
     match self.config.autosave {
       AutoSave::Every => {
         self.storage().flush_changes().await?;
