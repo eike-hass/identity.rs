@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use criterion::criterion_group;
 use criterion::criterion_main;
 use criterion::BenchmarkId;
@@ -5,15 +7,14 @@ use criterion::Criterion;
 use criterion::SamplingMode;
 use tokio::runtime::Runtime;
 
-use identity_account::account::Account;
-use identity_account::account::AccountBuilder;
-use identity_account::account::AccountStorage;
-use identity_account::account::AutoSave;
-use identity_account::identity::IdentitySetup;
+use identity::account::Account;
+use identity::account::AccountBuilder;
+use identity::account::AccountStorage;
+use identity::account::AutoSave;
+use identity::account::IdentitySetup;
 
 const ACTIONS: usize = 100;
 const AUTOSAVE_SETTINGS: [AutoSave; 8] = [
-  AutoSave::Never,
   AutoSave::Every,
   AutoSave::Batch(2),
   AutoSave::Batch(5),
@@ -21,6 +22,7 @@ const AUTOSAVE_SETTINGS: [AutoSave; 8] = [
   AutoSave::Batch(20),
   AutoSave::Batch(50),
   AutoSave::Batch(100),
+  AutoSave::Never,
 ];
 const PASSWORD: &'static str = "my-password";
 const STONGHOLD_PATH: &'static str = "./example-strong.hodl";
@@ -31,17 +33,19 @@ fn bench_autosave(c: &mut Criterion) {
 
   let mut group = c.benchmark_group(format!("Number of Actions: {}   ", ACTIONS));
   group.sample_size(SAMPLE_SIZE);
+  //group.warm_up_time(Duration::from_millis(10));
+  //group.measurement_time(Duration::from_millis(100));
   group.sampling_mode(SamplingMode::Flat);
   for setting in AUTOSAVE_SETTINGS {
-    group.bench_with_input(BenchmarkId::new(format!("{:?}", setting), ACTIONS), &ACTIONS, |b, n| {
+    group.bench_with_input(BenchmarkId::new(format!("{:?}", setting), ACTIONS), &ACTIONS, |b, actions| {
       b.to_async(&rt)
-        .iter(|| async { multiple_identity_updates(setting, *n).await })
+        .iter(|| async { multiple_identity_updates(setting, *actions).await })
     });
   }
   group.finish();
 }
 
-async fn multiple_identity_updates(auto_save: AutoSave, n: usize) {
+async fn multiple_identity_updates(auto_save: AutoSave, actions: usize) {
   let mut builder: AccountBuilder =
     Account::builder()
       .autopublish(false)
@@ -53,7 +57,7 @@ async fn multiple_identity_updates(auto_save: AutoSave, n: usize) {
       ));
   let account: Account = builder.create_identity(IdentitySetup::default()).await.unwrap();
 
-  for _ in 0..n {
+  for i in 0..actions {
     account.increment_actions();
     account.save(false).await.unwrap();
   }
