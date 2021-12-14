@@ -47,7 +47,7 @@ pub enum Error {
   InvalidUrl(#[from] url::ParseError),
   /// Caused by attempting to parse an invalid `Timestamp`.
   #[error("Invalid Timestamp: {0}")]
-  InvalidTimestamp(#[from] chrono::ParseError),
+  InvalidTimestamp(#[from] time::error::Error),
   /// Raised by a validation attempt against an invalid DID proof.
   #[error("Invalid Proof Value: {0}")]
   InvalidProofValue(&'static str),
@@ -75,6 +75,9 @@ pub enum Error {
   /// Caused by attempting to create a KeyCollection of invalid size.
   #[error("Invalid Key Collection Size: {0}")]
   InvalidKeyCollectionSize(usize),
+  /// Caused by attempting to create a Proof with more nodes than allowed.
+  #[error("Invalid number of nodes in the Proof: {0}")]
+  InvalidProofSize(usize),
 }
 
 impl From<crypto::Error> for Error {

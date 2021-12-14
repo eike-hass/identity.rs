@@ -2,17 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use core::fmt::Display;
-use core::fmt::Error as FmtError;
 use core::fmt::Formatter;
-use core::fmt::Result as FmtResult;
 
-use identity_core::convert::ToJson;
+use serde::Deserialize;
+use serde::Serialize;
+
+use identity_core::convert::FmtJson;
 
 use crate::chain::DiffChain;
 use crate::chain::IntegrationChain;
-use crate::did::DocumentDiff;
 use crate::did::IotaDID;
-use crate::did::IotaDocument;
+use crate::document::DiffMessage;
+use crate::document::IotaDocument;
 use crate::error::Result;
 use crate::tangle::MessageId;
 
@@ -136,35 +137,31 @@ impl DocumentChain {
     Ok(())
   }
 
-  /// Adds a new [`DocumentDiff`] to the chain.
+  /// Adds a new [`DiffMessage`] to the chain.
   ///
   /// # Errors
   ///
   /// Fails if the diff is invalid.
-  pub fn try_push_diff(&mut self, diff: DocumentDiff) -> Result<()> {
-    self.chain_d.check_valid_addition(&self.chain_i, &diff)?;
+  pub fn try_push_diff(&mut self, diff: DiffMessage) -> Result<()> {
+    // Use the last integration chain document to validate the signature on the diff.
+    let integration_document: &IotaDocument = self.chain_i.current();
+    let expected_prev_message_id: &MessageId = self.diff_message_id();
+    DiffChain::check_valid_addition(&diff, integration_document, expected_prev_message_id)?;
 
+    // Merge the diff into the latest state
     let mut document: IotaDocument = self.document.take().unwrap_or_else(|| self.chain_i.current().clone());
-
     document.merge(&diff)?;
 
+    // Extend the diff chain and store the merged result.
+    self.chain_d.try_push(diff, &self.chain_i)?;
     self.document = Some(document);
-
-    // SAFETY: we performed the necessary validation in `DiffChain::check_validity`.
-    unsafe {
-      self.chain_d.push_unchecked(diff);
-    }
 
     Ok(())
   }
 }
 
 impl Display for DocumentChain {
-  fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-    if f.alternate() {
-      f.write_str(&self.to_json_pretty().map_err(|_| FmtError)?)
-    } else {
-      f.write_str(&self.to_json().map_err(|_| FmtError)?)
-    }
+  fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+    self.fmt_json(f)
   }
 }
