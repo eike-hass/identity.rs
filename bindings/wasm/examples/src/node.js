@@ -8,6 +8,7 @@ import {resolution} from "./resolution";
 import {createVC} from "./create_vc";
 import {createVP} from "./create_vp";
 import {revokeVC} from "./revoke_vc";
+import {storage} from "./storage";
 import {merkleKey} from "./merkle_key";
 import {CLIENT_CONFIG} from "./config";
 import {resolveHistory} from "./resolve_history";
@@ -32,6 +33,8 @@ async function main() {
             return await createVC(CLIENT_CONFIG);
         case "revoke_vc":
             return await revokeVC(CLIENT_CONFIG);
+        case "storage":
+            return await storage(CLIENT_CONFIG);
         case "create_vp":
             return await createVP(CLIENT_CONFIG);
         case "merkle_key":
