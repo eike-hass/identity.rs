@@ -1,4 +1,4 @@
-// Copyright 2020-2021 IOTA Stiftung
+// Copyright 2020-2022 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
 use crypto::signatures::ed25519;
@@ -20,6 +20,7 @@ use identity_iota::did::IotaDID;
 use identity_iota::did::IotaDIDUrl;
 use identity_iota::document::IotaDocument;
 use identity_iota::document::IotaVerificationMethod;
+use identity_iota::tangle::NetworkName;
 
 use crate::account::Account;
 use crate::error::Result;
@@ -34,7 +35,11 @@ use crate::updates::UpdateError;
 
 pub const DEFAULT_UPDATE_METHOD_PREFIX: &str = "sign-";
 
-pub(crate) async fn create_identity(setup: IdentitySetup, store: &dyn Storage) -> Result<(DIDLease, IdentityState)> {
+pub(crate) async fn create_identity(
+  setup: IdentitySetup,
+  network: NetworkName,
+  store: &dyn Storage,
+) -> Result<(DIDLease, IdentityState)> {
   let method_type = match setup.key_type {
     KeyType::Ed25519 => MethodType::Ed25519VerificationKey2018,
   };
@@ -66,11 +71,7 @@ pub(crate) async fn create_identity(setup: IdentitySetup, store: &dyn Storage) -
   };
 
   // Generate a new DID from the public key
-  let did: IotaDID = if let Some(network) = &setup.network {
-    IotaDID::new_with_network(keypair.public().as_ref(), network.clone())?
-  } else {
-    IotaDID::new(keypair.public().as_ref())?
-  };
+  let did: IotaDID = IotaDID::new_with_network(keypair.public().as_ref(), network)?;
 
   ensure!(
     !store.key_exists(&did, &location).await?,
@@ -178,7 +179,7 @@ impl Update {
         let core_method_url: CoreDIDUrl = CoreDIDUrl::from(method_url.clone());
 
         // Prevent deleting the last method capable of signing the DID document.
-        let capability_invocation_set = state.document().as_document().capability_invocation();
+        let capability_invocation_set = state.document().core_document().capability_invocation();
         let is_capability_invocation = capability_invocation_set
           .iter()
           .any(|method_ref| method_ref.id() == &core_method_url);
@@ -215,7 +216,7 @@ impl Update {
         let core_method_url: CoreDIDUrl = CoreDIDUrl::from(method_url.clone());
 
         // Prevent detaching the last method capable of signing the DID document.
-        let capability_invocation_set = state.document().as_document().capability_invocation();
+        let capability_invocation_set = state.document().core_document().capability_invocation();
         let is_capability_invocation = capability_invocation_set
           .iter()
           .any(|method_ref| method_ref.id() == &core_method_url);
@@ -269,7 +270,7 @@ impl Update {
       }
     }
 
-    state.document_mut().set_updated(Timestamp::now_utc());
+    state.document_mut().metadata.updated = Timestamp::now_utc();
 
     Ok(())
   }
@@ -355,6 +356,7 @@ AttachMethodRelationship {
 });
 
 impl<'account> AttachMethodRelationshipBuilder<'account> {
+  #[must_use]
   pub fn relationship(mut self, value: MethodRelationship) -> Self {
     self.relationships.get_or_insert_with(Default::default).push(value);
     self
@@ -373,6 +375,7 @@ DetachMethodRelationship {
 });
 
 impl<'account> DetachMethodRelationshipBuilder<'account> {
+  #[must_use]
   pub fn relationship(mut self, value: MethodRelationship) -> Self {
     self.relationships.get_or_insert_with(Default::default).push(value);
     self

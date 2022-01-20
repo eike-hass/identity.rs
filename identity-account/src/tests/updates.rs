@@ -1,22 +1,8 @@
-// Copyright 2020-2021 IOTA Stiftung
+// Copyright 2020-2022 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
 use std::sync::Arc;
 
-use crate::account::Account;
-use crate::account::AccountConfig;
-use crate::account::AccountSetup;
-use crate::error::Error;
-use crate::error::Result;
-use crate::identity::IdentitySetup;
-use crate::updates::Update;
-use crate::updates::UpdateError;
-
-use crate::identity::IdentityState;
-use crate::storage::MemStore;
-use crate::types::Generation;
-use crate::types::KeyLocation;
-use crate::types::MethodSecret;
 use identity_core::common::Timestamp;
 use identity_core::common::Url;
 use identity_core::crypto::KeyCollection;
@@ -29,27 +15,49 @@ use identity_did::verification::MethodRelationship;
 use identity_did::verification::MethodScope;
 use identity_did::verification::MethodType;
 use identity_iota::did::IotaDID;
+use identity_iota::tangle::ClientBuilder;
 use identity_iota::tangle::Network;
 
-fn account_setup() -> AccountSetup {
-  AccountSetup::new_with_options(
+use crate::account::Account;
+use crate::account::AccountConfig;
+use crate::account::AccountSetup;
+use crate::error::Error;
+use crate::error::Result;
+use crate::identity::IdentitySetup;
+use crate::identity::IdentityState;
+use crate::storage::MemStore;
+use crate::types::Generation;
+use crate::types::KeyLocation;
+use crate::types::MethodSecret;
+use crate::updates::Update;
+use crate::updates::UpdateError;
+
+async fn account_setup(network: Network) -> AccountSetup {
+  AccountSetup::new(
     Arc::new(MemStore::new()),
-    Some(AccountConfig::new().testmode(true)),
-    None,
+    Arc::new(
+      ClientBuilder::new()
+        .network(network)
+        .node_sync_disabled()
+        .build()
+        .await
+        .unwrap(),
+    ),
+    AccountConfig::new().testmode(true),
   )
 }
 
 #[tokio::test]
 async fn test_create_identity() -> Result<()> {
-  let account = Account::create_identity(account_setup(), IdentitySetup::default()).await?;
+  let account = Account::create_identity(account_setup(Network::Mainnet).await, IdentitySetup::default()).await?;
 
   let expected_fragment = format!("{}{}", crate::updates::DEFAULT_UPDATE_METHOD_PREFIX, Generation::new());
 
   let state: &IdentityState = account.state();
 
   assert!(state.document().resolve_method(&expected_fragment).is_some());
-  assert_eq!(state.document().as_document().verification_relationships().count(), 1);
-  assert_eq!(state.document().as_document().methods().count(), 1);
+  assert_eq!(state.document().core_document().verification_relationships().count(), 1);
+  assert_eq!(state.document().core_document().methods().count(), 1);
 
   let location = state
     .method_location(MethodType::Ed25519VerificationKey2018, expected_fragment.clone())
@@ -61,7 +69,7 @@ async fn test_create_identity() -> Result<()> {
     KeyLocation::new(
       MethodType::Ed25519VerificationKey2018,
       expected_fragment,
-      Generation::new()
+      Generation::new(),
     )
   );
 
@@ -72,36 +80,43 @@ async fn test_create_identity() -> Result<()> {
   assert!(account.load_state().await.is_ok());
 
   // Ensure timestamps were recently set.
-  assert!(state.document().created() > Timestamp::from_unix(Timestamp::now_utc().to_unix() - 15).unwrap());
-  assert!(state.document().updated() > Timestamp::from_unix(Timestamp::now_utc().to_unix() - 15).unwrap());
+  assert!(state.document().metadata.created > Timestamp::from_unix(Timestamp::now_utc().to_unix() - 15).unwrap());
+  assert!(state.document().metadata.updated > Timestamp::from_unix(Timestamp::now_utc().to_unix() - 15).unwrap());
 
   Ok(())
 }
 
 #[tokio::test]
 async fn test_create_identity_network() -> Result<()> {
-  // Create an identity with a valid network string
-  let create_identity: IdentitySetup = IdentitySetup::new().network("dev")?.key_type(KeyType::Ed25519);
-  let account = Account::create_identity(account_setup(), create_identity).await?;
+  // Ensure created identities match the client network.
 
-  assert_eq!(
-    account.did().network().unwrap().name(),
-    Network::try_from_name("dev").unwrap().name()
-  );
+  // Mainnet
+  let account = Account::create_identity(account_setup(Network::Mainnet).await, IdentitySetup::default()).await?;
+  assert_eq!(account.did().network_str(), Network::Mainnet.name_str());
 
-  Ok(())
-}
+  // Devnet
+  let account = Account::create_identity(account_setup(Network::Devnet).await, IdentitySetup::default()).await?;
+  assert_eq!(account.did().network_str(), Network::Devnet.name_str());
 
-#[tokio::test]
-async fn test_create_identity_invalid_network() -> Result<()> {
-  // Attempt to create an identity with an invalid network string
-  let result: Result<IdentitySetup> = IdentitySetup::new().network("Invalid=Network!");
-
-  // Ensure an `InvalidNetworkName` error is thrown
-  assert!(matches!(
-    result.unwrap_err(),
-    Error::IotaError(identity_iota::Error::InvalidNetworkName),
-  ));
+  // Private Tangle
+  let account = Account::create_identity(
+    AccountSetup::new(
+      Arc::new(MemStore::new()),
+      Arc::new(
+        ClientBuilder::new()
+          .network(Network::try_from_name("custom")?)
+          .node("http://127.0.0.1:8082")?
+          .node_sync_disabled()
+          .build()
+          .await
+          .unwrap(),
+      ),
+      AccountConfig::new().testmode(true),
+    ),
+    IdentitySetup::default(),
+  )
+  .await?;
+  assert_eq!(account.did().network_str(), "custom");
 
   Ok(())
 }
@@ -112,7 +127,7 @@ async fn test_create_identity_already_exists() -> Result<()> {
   let identity_create = IdentitySetup::default()
     .key_type(KeyType::Ed25519)
     .method_secret(MethodSecret::Ed25519(keypair.private().clone()));
-  let account_setup = account_setup();
+  let account_setup = account_setup(Network::Mainnet).await;
 
   let account = Account::create_identity(account_setup.clone(), identity_create.clone()).await?;
   let did: IotaDID = account.did().to_owned();
@@ -141,7 +156,9 @@ async fn test_create_identity_from_invalid_private_key() -> Result<()> {
     .key_type(KeyType::Ed25519)
     .method_secret(MethodSecret::Ed25519(private_key));
 
-  let err = Account::create_identity(account_setup(), id_create).await.unwrap_err();
+  let err = Account::create_identity(account_setup(Network::Mainnet).await, id_create)
+    .await
+    .unwrap_err();
 
   assert!(matches!(err, Error::UpdateError(UpdateError::InvalidMethodSecret(_))));
 
@@ -150,7 +167,7 @@ async fn test_create_identity_from_invalid_private_key() -> Result<()> {
 
 #[tokio::test]
 async fn test_create_method() -> Result<()> {
-  let mut account = Account::create_identity(account_setup(), IdentitySetup::default()).await?;
+  let mut account = Account::create_identity(account_setup(Network::Mainnet).await, IdentitySetup::default()).await?;
 
   let initial_state: IdentityState = account.state().to_owned();
   let method_type = MethodType::Ed25519VerificationKey2018;
@@ -174,8 +191,8 @@ async fn test_create_method() -> Result<()> {
   );
 
   // Still only the default relationship.
-  assert_eq!(state.document().as_document().verification_relationships().count(), 1);
-  assert_eq!(state.document().as_document().methods().count(), 2);
+  assert_eq!(state.document().core_document().verification_relationships().count(), 1);
+  assert_eq!(state.document().core_document().methods().count(), 2);
 
   let location = state.method_location(method_type, fragment.clone()).unwrap();
 
@@ -194,9 +211,12 @@ async fn test_create_method() -> Result<()> {
   assert!(account.storage().key_exists(account.did(), &location).await.unwrap());
 
   // Ensure `created` wasn't updated.
-  assert_eq!(initial_state.document().created(), state.document().created());
+  assert_eq!(
+    initial_state.document().metadata.created,
+    state.document().metadata.created
+  );
   // Ensure `updated` was recently set.
-  assert!(state.document().updated() > Timestamp::from_unix(Timestamp::now_utc().to_unix() - 15).unwrap());
+  assert!(state.document().metadata.updated > Timestamp::from_unix(Timestamp::now_utc().to_unix() - 15).unwrap());
 
   Ok(())
 }
@@ -210,7 +230,7 @@ async fn test_create_scoped_method() -> Result<()> {
     MethodScope::capability_invocation(),
     MethodScope::key_agreement(),
   ] {
-    let mut account = Account::create_identity(account_setup(), IdentitySetup::default()).await?;
+    let mut account = Account::create_identity(account_setup(Network::Mainnet).await, IdentitySetup::default()).await?;
 
     let fragment = "#key-1".to_owned();
 
@@ -225,11 +245,11 @@ async fn test_create_scoped_method() -> Result<()> {
 
     let state: &IdentityState = account.state();
 
-    assert_eq!(state.document().as_document().verification_relationships().count(), 2);
+    assert_eq!(state.document().core_document().verification_relationships().count(), 2);
 
-    assert_eq!(state.document().as_document().methods().count(), 2);
+    assert_eq!(state.document().core_document().methods().count(), 2);
 
-    let core_doc = state.document().as_document();
+    let core_doc = state.document().core_document();
 
     let contains = match scope {
       MethodScope::VerificationRelationship(MethodRelationship::Authentication) => core_doc
@@ -258,7 +278,7 @@ async fn test_create_scoped_method() -> Result<()> {
 
 #[tokio::test]
 async fn test_create_method_duplicate_fragment() -> Result<()> {
-  let mut account_setup = account_setup();
+  let mut account_setup = account_setup(Network::Mainnet).await;
   account_setup.config = account_setup.config.testmode(true).autopublish(false);
 
   let mut account = Account::create_identity(account_setup, IdentitySetup::default())
@@ -298,7 +318,7 @@ async fn test_create_method_duplicate_fragment() -> Result<()> {
 
 #[tokio::test]
 async fn test_create_method_from_private_key() -> Result<()> {
-  let mut account = Account::create_identity(account_setup(), IdentitySetup::default()).await?;
+  let mut account = Account::create_identity(account_setup(Network::Mainnet).await, IdentitySetup::default()).await?;
 
   let keypair = KeyPair::new_ed25519()?;
   let fragment = "key-1".to_owned();
@@ -327,7 +347,7 @@ async fn test_create_method_from_private_key() -> Result<()> {
 
 #[tokio::test]
 async fn test_create_method_from_invalid_private_key() -> Result<()> {
-  let mut account = Account::create_identity(account_setup(), IdentitySetup::default()).await?;
+  let mut account = Account::create_identity(account_setup(Network::Mainnet).await, IdentitySetup::default()).await?;
 
   let private_bytes: Box<[u8]> = Box::new([0; 33]);
   let private_key = PrivateKey::from(private_bytes);
@@ -348,7 +368,7 @@ async fn test_create_method_from_invalid_private_key() -> Result<()> {
 
 #[tokio::test]
 async fn test_attach_method_relationship() -> Result<()> {
-  let mut account = Account::create_identity(account_setup(), IdentitySetup::default()).await?;
+  let mut account = Account::create_identity(account_setup(Network::Mainnet).await, IdentitySetup::default()).await?;
 
   let fragment = "key-1".to_owned();
 
@@ -366,7 +386,7 @@ async fn test_attach_method_relationship() -> Result<()> {
     account
       .state()
       .document()
-      .as_document()
+      .core_document()
       .verification_relationships()
       .count(),
     1
@@ -397,10 +417,13 @@ async fn test_attach_method_relationship() -> Result<()> {
   ));
 
   // No relationships were created.
-  assert_eq!(account.document().as_document().verification_relationships().count(), 1);
+  assert_eq!(
+    account.document().core_document().verification_relationships().count(),
+    1
+  );
 
-  assert_eq!(account.document().as_document().assertion_method().iter().count(), 0);
-  assert_eq!(account.document().as_document().key_agreement().iter().count(), 0);
+  assert_eq!(account.document().core_document().assertion_method().iter().count(), 0);
+  assert_eq!(account.document().core_document().key_agreement().iter().count(), 0);
 
   let update: Update = Update::AttachMethodRelationship {
     relationships: vec![MethodRelationship::AssertionMethod, MethodRelationship::KeyAgreement],
@@ -410,13 +433,16 @@ async fn test_attach_method_relationship() -> Result<()> {
   account.process_update(update).await?;
 
   // Relationships were created.
-  assert_eq!(account.document().as_document().verification_relationships().count(), 3);
+  assert_eq!(
+    account.document().core_document().verification_relationships().count(),
+    3
+  );
 
-  assert_eq!(account.document().as_document().assertion_method().len(), 1);
+  assert_eq!(account.document().core_document().assertion_method().len(), 1);
   assert_eq!(
     account
       .document()
-      .as_document()
+      .core_document()
       .assertion_method()
       .first()
       .unwrap()
@@ -425,11 +451,11 @@ async fn test_attach_method_relationship() -> Result<()> {
       .unwrap(),
     fragment
   );
-  assert_eq!(account.document().as_document().key_agreement().len(), 1);
+  assert_eq!(account.document().core_document().key_agreement().len(), 1);
   assert_eq!(
     account
       .document()
-      .as_document()
+      .core_document()
       .key_agreement()
       .first()
       .unwrap()
@@ -444,7 +470,7 @@ async fn test_attach_method_relationship() -> Result<()> {
 
 #[tokio::test]
 async fn test_detach_method_relationship() -> Result<()> {
-  let mut account = Account::create_identity(account_setup(), IdentitySetup::default()).await?;
+  let mut account = Account::create_identity(account_setup(Network::Mainnet).await, IdentitySetup::default()).await?;
 
   let generic_fragment = "key-1".to_owned();
   let embedded_fragment = "embedded-1".to_owned();
@@ -475,7 +501,10 @@ async fn test_detach_method_relationship() -> Result<()> {
   ));
 
   // No relationships were removed.
-  assert_eq!(account.document().as_document().verification_relationships().count(), 2);
+  assert_eq!(
+    account.document().core_document().verification_relationships().count(),
+    2
+  );
 
   let update: Update = Update::CreateMethod {
     scope: MethodScope::default(),
@@ -493,8 +522,8 @@ async fn test_detach_method_relationship() -> Result<()> {
 
   account.process_update(update).await?;
 
-  assert_eq!(account.document().as_document().assertion_method().len(), 1);
-  assert_eq!(account.document().as_document().key_agreement().len(), 1);
+  assert_eq!(account.document().core_document().assertion_method().len(), 1);
+  assert_eq!(account.document().core_document().key_agreement().len(), 1);
 
   let update: Update = Update::DetachMethodRelationship {
     relationships: vec![MethodRelationship::AssertionMethod, MethodRelationship::KeyAgreement],
@@ -503,15 +532,15 @@ async fn test_detach_method_relationship() -> Result<()> {
 
   account.process_update(update).await?;
 
-  assert_eq!(account.document().as_document().assertion_method().len(), 0);
-  assert_eq!(account.document().as_document().key_agreement().len(), 0);
+  assert_eq!(account.document().core_document().assertion_method().len(), 0);
+  assert_eq!(account.document().core_document().key_agreement().len(), 0);
 
   Ok(())
 }
 
 #[tokio::test]
 async fn test_create_method_with_type_secret_mismatch() -> Result<()> {
-  let mut account = Account::create_identity(account_setup(), IdentitySetup::default()).await?;
+  let mut account = Account::create_identity(account_setup(Network::Mainnet).await, IdentitySetup::default()).await?;
 
   let private_bytes: Box<[u8]> = Box::new([0; 32]);
   let private_key = PrivateKey::from(private_bytes);
@@ -545,7 +574,7 @@ async fn test_create_method_with_type_secret_mismatch() -> Result<()> {
 
 #[tokio::test]
 async fn test_delete_method() -> Result<()> {
-  let mut account = Account::create_identity(account_setup(), IdentitySetup::default()).await?;
+  let mut account = Account::create_identity(account_setup(Network::Mainnet).await, IdentitySetup::default()).await?;
 
   let fragment = "key-1".to_owned();
   let method_type = MethodType::Ed25519VerificationKey2018;
@@ -575,9 +604,9 @@ async fn test_delete_method() -> Result<()> {
   assert!(state.document().resolve_method(&fragment).is_none());
 
   // Still only the default relationship.
-  assert_eq!(state.document().as_document().verification_relationships().count(), 1);
+  assert_eq!(state.document().core_document().verification_relationships().count(), 1);
 
-  assert_eq!(state.document().as_document().methods().count(), 1);
+  assert_eq!(state.document().core_document().methods().count(), 1);
 
   let location = state.method_location(method_type, fragment.clone()).unwrap();
 
@@ -585,9 +614,12 @@ async fn test_delete_method() -> Result<()> {
   assert!(account.storage().key_exists(account.did(), &location).await.unwrap());
 
   // Ensure `created` wasn't updated.
-  assert_eq!(initial_state.document().created(), state.document().created());
+  assert_eq!(
+    initial_state.document().metadata.created,
+    state.document().metadata.created
+  );
   // Ensure `updated` was recently set.
-  assert!(state.document().updated() > Timestamp::from_unix(Timestamp::now_utc().to_unix() - 15).unwrap());
+  assert!(state.document().metadata.updated > Timestamp::from_unix(Timestamp::now_utc().to_unix() - 15).unwrap());
 
   // Deleting a non-existing methods fails.
   let output = account.process_update(update).await;
@@ -602,7 +634,7 @@ async fn test_delete_method() -> Result<()> {
 
 #[tokio::test]
 async fn test_insert_service() -> Result<()> {
-  let mut account = Account::create_identity(account_setup(), IdentitySetup::default()).await?;
+  let mut account = Account::create_identity(account_setup(Network::Mainnet).await, IdentitySetup::default()).await?;
 
   assert_eq!(account.document().service().len(), 0);
 
@@ -635,7 +667,7 @@ async fn test_insert_service() -> Result<()> {
 
 #[tokio::test]
 async fn test_remove_service() -> Result<()> {
-  let mut account = Account::create_identity(account_setup(), IdentitySetup::default()).await?;
+  let mut account = Account::create_identity(account_setup(Network::Mainnet).await, IdentitySetup::default()).await?;
 
   let fragment = "#service-42".to_owned();
 

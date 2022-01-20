@@ -1,26 +1,27 @@
-// Copyright 2020-2021 IOTA Stiftung
+// Copyright 2020-2022 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
-use identity_core::crypto::SetSignature;
-use identity_iota::did::IotaDID;
-use identity_iota::document::DiffMessage;
-use identity_iota::document::IotaDocument;
-use identity_iota::document::IotaVerificationMethod;
-use identity_iota::tangle::Client;
-use identity_iota::tangle::ClientMap;
-use identity_iota::tangle::MessageId;
-use identity_iota::tangle::MessageIdExt;
-use identity_iota::tangle::PublishType;
-use identity_iota::tangle::TangleRef;
-use identity_iota::tangle::TangleResolve;
-use serde::Serialize;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use serde::Serialize;
+
+use identity_core::crypto::SetSignature;
+use identity_core::crypto::SignatureOptions;
+use identity_iota::chain::DocumentChain;
+use identity_iota::did::IotaDID;
+use identity_iota::diff::DiffMessage;
+use identity_iota::document::IotaDocument;
+use identity_iota::document::IotaVerificationMethod;
+use identity_iota::document::ResolvedIotaDocument;
+use identity_iota::tangle::Client;
+use identity_iota::tangle::MessageId;
+use identity_iota::tangle::MessageIdExt;
+use identity_iota::tangle::PublishType;
+
 use crate::account::AccountBuilder;
 use crate::account::PublishOptions;
-use crate::error::Result;
 use crate::identity::ChainState;
 use crate::identity::DIDLease;
 use crate::identity::IdentitySetup;
@@ -31,6 +32,7 @@ use crate::types::KeyLocation;
 use crate::updates::create_identity;
 use crate::updates::Update;
 use crate::Error;
+use crate::Result;
 
 use super::config::AccountSetup;
 use super::config::AutoSave;
@@ -44,12 +46,12 @@ use super::AccountConfig;
 pub struct Account {
   config: AccountConfig,
   storage: Arc<dyn Storage>,
-  client_map: Arc<ClientMap>,
+  client: Arc<Client>,
   actions: AtomicUsize,
   chain_state: ChainState,
   state: IdentityState,
-  _did_lease: DIDLease, /* This field is not read, but has special behaviour on drop which is why it is needed in
-                         * the Account. */
+  // The lease is not read, but releases the DID storage lease when the Account is dropped.
+  _did_lease: DIDLease,
 }
 
 impl Account {
@@ -72,7 +74,7 @@ impl Account {
     Ok(Self {
       config: setup.config,
       storage: setup.storage,
-      client_map: setup.client_map,
+      client: setup.client,
       actions: AtomicUsize::new(0),
       chain_state,
       state,
@@ -81,14 +83,20 @@ impl Account {
   }
 
   /// Creates a new identity and returns an [`Account`] instance to manage it.
-  /// The identity is stored locally in the [`Storage`] given in [`AccountSetup`], and published
-  /// using the [`ClientMap`].
+  ///
+  /// The identity is stored locally in the [`Storage`] given in [`AccountSetup`]. The DID network
+  /// is automatically determined by the [`Client`] used to publish it.
   ///
   /// See [`IdentitySetup`] to customize the identity creation.
-  pub(crate) async fn create_identity(setup: AccountSetup, input: IdentitySetup) -> Result<Self> {
-    let (did_lease, state): (DIDLease, IdentityState) = create_identity(input, setup.storage.as_ref()).await?;
+  pub(crate) async fn create_identity(account_setup: AccountSetup, identity_setup: IdentitySetup) -> Result<Self> {
+    let (did_lease, state): (DIDLease, IdentityState) = create_identity(
+      identity_setup,
+      account_setup.client.network().name(),
+      account_setup.storage.as_ref(),
+    )
+    .await?;
 
-    let mut account = Self::with_setup(setup, ChainState::new(), state, did_lease).await?;
+    let mut account = Self::with_setup(account_setup, ChainState::new(), state, did_lease).await?;
 
     account.store_state().await?;
 
@@ -99,6 +107,15 @@ impl Account {
 
   /// Creates an [`Account`] for an existing identity, if it exists in the [`Storage`].
   pub(crate) async fn load_identity(setup: AccountSetup, did: IotaDID) -> Result<Self> {
+    // Ensure the DID matches the client network.
+    if did.network_str() != setup.client.network().name_str() {
+      return Err(Error::IotaError(identity_iota::Error::IncompatibleNetwork(format!(
+        "DID network {} does not match account network {}",
+        did.network_str(),
+        setup.client.network().name_str()
+      ))));
+    }
+
     // Ensure the did exists in storage
     let state = setup.storage.state(&did).await?.ok_or(Error::IdentityNotFound)?;
     let chain_state = setup.storage.chain_state(&did).await?.ok_or(Error::IdentityNotFound)?;
@@ -137,14 +154,9 @@ impl Account {
     self.actions.fetch_add(1, Ordering::SeqCst);
   }
 
-  /// Adds a pre-configured `Client` for Tangle interactions.
-  pub fn set_client(&self, client: Client) {
-    self.client_map.insert(client);
-  }
-
   /// Returns the did of the managed identity.
   pub fn did(&self) -> &IotaDID {
-    self.document().did()
+    self.document().id()
   }
 
   /// Return the latest state of the identity.
@@ -179,8 +191,8 @@ impl Account {
   // ===========================================================================
 
   /// Resolves the DID Document associated with this `Account` from the Tangle.
-  pub async fn resolve_identity(&self) -> Result<IotaDocument> {
-    self.client_map.resolve(self.did()).await.map_err(Into::into)
+  pub async fn resolve_identity(&self) -> Result<ResolvedIotaDocument> {
+    self.client.read_document(self.did()).await.map_err(Into::into)
   }
 
   /// Returns the [`IdentityUpdater`] for this identity.
@@ -222,7 +234,7 @@ impl Account {
   }
 
   /// Signs `data` with the key specified by `fragment`.
-  pub async fn sign<U>(&self, fragment: &str, target: &mut U) -> Result<()>
+  pub async fn sign<U>(&self, fragment: &str, data: &mut U, options: SignatureOptions) -> Result<()>
   where
     U: Serialize + SetSignature,
   {
@@ -235,7 +247,9 @@ impl Account {
 
     let location: KeyLocation = state.method_location(method.key_type(), fragment.to_owned())?;
 
-    state.sign_data(self.did(), self.storage(), &location, target).await?;
+    state
+      .sign_data(self.did(), self.storage(), &location, data, options)
+      .await?;
 
     Ok(())
   }
@@ -254,6 +268,33 @@ impl Account {
   pub async fn publish_with_options(&mut self, options: PublishOptions) -> Result<()> {
     self.publish_internal(true, options).await?;
 
+    Ok(())
+  }
+
+  /// Fetches the latest changes from the tangle and **overwrites** the local document.
+  ///
+  /// If a DID is managed from distributed accounts, this should be called before making changes
+  /// to the identity, to avoid publishing updates that would be ignored.
+  pub async fn fetch_state(&mut self) -> Result<()> {
+    let iota_did: &IotaDID = self.did();
+    let mut document_chain: DocumentChain = self.client.read_document_chain(iota_did).await?;
+    // Checks if the local document is up to date
+    if document_chain.integration_message_id() == self.chain_state.last_integration_message_id()
+      && (document_chain.diff().is_empty()
+        || document_chain.diff_message_id() == self.chain_state.last_diff_message_id())
+    {
+      return Ok(());
+    }
+    // Overwrite the current state with the most recent document
+    self
+      .chain_state
+      .set_last_integration_message_id(*document_chain.integration_message_id());
+    self
+      .chain_state
+      .set_last_diff_message_id(*document_chain.diff_message_id());
+    std::mem::swap(self.state.document_mut(), &mut document_chain.current_mut().document);
+    self.increment_actions();
+    self.store_state().await?;
     Ok(())
   }
 
@@ -296,7 +337,7 @@ impl Account {
     };
 
     let signing_method: &IotaVerificationMethod = match signing_method_query {
-      Some(fragment) => signing_state.document().resolve_signing_method(fragment)?,
+      Some(fragment) => signing_state.document().try_resolve_signing_method(fragment)?,
       None => signing_state.document().default_signing_method()?,
     };
 
@@ -311,7 +352,13 @@ impl Account {
     )?;
 
     signing_state
-      .sign_data(self.did(), self.storage(), &signing_key_location, document)
+      .sign_data(
+        self.did(),
+        self.storage(),
+        &signing_key_location,
+        document,
+        SignatureOptions::default(),
+      )
       .await?;
 
     Ok(())
@@ -374,13 +421,13 @@ impl Account {
     old_state: Option<&IdentityState>,
     signing_method_query: &Option<String>,
   ) -> Result<()> {
-    log::debug!("[publish_integration_change] publishing {:?}", self.document().did());
+    log::debug!("[publish_integration_change] publishing {:?}", self.document().id());
 
     let new_state: &IdentityState = self.state();
 
     let mut new_doc: IotaDocument = new_state.document().to_owned();
 
-    new_doc.set_previous_message_id(*self.chain_state().last_integration_message_id());
+    new_doc.metadata.previous_message_id = *self.chain_state().last_integration_message_id();
 
     self
       .sign_self(
@@ -400,7 +447,7 @@ impl Account {
       // Fake publishing by returning a random message id.
       MessageId::new(unsafe { crypto::utils::rand::gen::<[u8; 32]>().unwrap() })
     } else {
-      self.client_map.publish_document(&new_doc).await?.into()
+      self.client.publish_document(&new_doc).await?.into()
     };
 
     self.chain_state.set_last_integration_message_id(message_id);
@@ -413,7 +460,7 @@ impl Account {
     old_state: &IdentityState,
     signing_method_query: &Option<String>,
   ) -> Result<()> {
-    log::debug!("[publish_diff_change] publishing {:?}", self.document().did());
+    log::debug!("[publish_diff_change] publishing {:?}", self.document().id());
 
     let old_doc: &IotaDocument = old_state.document();
     let new_doc: &IotaDocument = self.state().document();
@@ -432,7 +479,7 @@ impl Account {
     let mut diff: DiffMessage = DiffMessage::new(old_doc, new_doc, *previous_message_id)?;
 
     let signing_method: &IotaVerificationMethod = match signing_method_query {
-      Some(fragment) => old_state.document().resolve_signing_method(fragment)?,
+      Some(fragment) => old_state.document().try_resolve_signing_method(fragment)?,
       None => old_state.document().default_signing_method()?,
     };
 
@@ -447,7 +494,13 @@ impl Account {
     )?;
 
     old_state
-      .sign_data(self.did(), self.storage(), &signing_key_location, &mut diff)
+      .sign_data(
+        self.did(),
+        self.storage(),
+        &signing_key_location,
+        &mut diff,
+        SignatureOptions::default(),
+      )
       .await?;
 
     log::debug!(
@@ -460,7 +513,7 @@ impl Account {
       MessageId::new(unsafe { crypto::utils::rand::gen::<[u8; 32]>().unwrap() })
     } else {
       self
-        .client_map
+        .client
         .publish_diff(self.chain_state().last_integration_message_id(), &diff)
         .await?
         .into()

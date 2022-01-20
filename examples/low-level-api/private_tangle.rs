@@ -1,4 +1,4 @@
-// Copyright 2020-2021 IOTA Stiftung
+// Copyright 2020-2022 IOTA Stiftung
 // SPDX-License-Identifier: Apache-2.0
 
 //! A basic example that generates and publishes a DID Document
@@ -12,10 +12,8 @@
 use identity::iota::ClientBuilder;
 use identity::iota::DIDMessageEncoding;
 use identity::iota::ExplorerUrl;
-use identity::iota::IotaDID;
 use identity::iota::Network;
 use identity::iota::Receipt;
-use identity::iota::TangleRef;
 use identity::prelude::*;
 
 #[tokio::main]
@@ -33,7 +31,7 @@ pub async fn main() -> Result<()> {
   // If you deployed an explorer locally this would usually be `http://127.0.0.1:8082`
   let explorer = ExplorerUrl::parse("https://explorer.iota.org/devnet")?;
 
-  // In a locally running one-click tangle, this would often be `http://127.0.0.1:14265`
+  // In a locally running one-click tangle, this would usually be `http://127.0.0.1:14265`
   let private_node_url = "https://api.lb-0.h.chrysalis-devnet.iota.cafe";
 
   // Use DIDMessageEncoding::Json instead to publish plaintext messages to the Tangle for debugging.
@@ -42,7 +40,7 @@ pub async fn main() -> Result<()> {
   let client = ClientBuilder::new()
     .network(network.clone())
     .encoding(encoding)
-    .node(private_node_url)?
+    .primary_node(private_node_url, None, None)?
     .build()
     .await?;
 
@@ -68,10 +66,9 @@ pub async fn main() -> Result<()> {
   println!("Publish Receipt > {:#?}", receipt);
 
   // Prints the Identity Resolver Explorer URL, the entire history can be observed on this page by "Loading History".
-  let iota_did: &IotaDID = document.did();
   println!(
     "[Example] Explore the DID Document = {}",
-    explorer.resolver_url(iota_did)?
+    explorer.resolver_url(document.id())?
   );
 
   Ok(())
