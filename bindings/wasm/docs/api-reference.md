@@ -863,6 +863,7 @@ with the given Document.
     * [new Document(keypair, network, fragment)](#new_Document_new)
     * _instance_
         * [.id](#Document+id) ⇒ [<code>DID</code>](#DID)
+        * [.controller](#Document+controller) ⇒ [<code>DID</code>](#DID) \| <code>undefined</code>
         * [.metadata](#Document+metadata) ⇒ [<code>DocumentMetadata</code>](#DocumentMetadata)
         * [.metadataCreated](#Document+metadataCreated) ⇒ [<code>Timestamp</code>](#Timestamp)
         * [.metadataCreated](#Document+metadataCreated)
@@ -926,6 +927,12 @@ Arguments:
 
 ### document.id ⇒ [<code>DID</code>](#DID)
 Returns the DID Document `id`.
+
+**Kind**: instance property of [<code>Document</code>](#Document)  
+<a name="Document+controller"></a>
+
+### document.controller ⇒ [<code>DID</code>](#DID) \| <code>undefined</code>
+Returns the `IotaDocument` controller if one exists.
 
 **Kind**: instance property of [<code>Document</code>](#Document)  
 <a name="Document+metadata"></a>

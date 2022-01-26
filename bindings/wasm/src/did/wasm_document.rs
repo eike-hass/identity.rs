@@ -87,6 +87,12 @@ impl WasmDocument {
     WasmDID(self.0.id().clone())
   }
 
+  /// Returns the `IotaDocument` controller if one exists.
+  #[wasm_bindgen(getter)]
+  pub fn controller(&self) -> Option<WasmDID> {
+    self.0.controller().cloned().map(WasmDID::from)
+  }
+
   // ===========================================================================
   // Services
   // ===========================================================================
