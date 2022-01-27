@@ -16,8 +16,10 @@ use identity::iota::IotaDocument;
 use identity::iota::IotaVerificationMethod;
 use identity::iota::MessageId;
 use identity::iota::NetworkName;
+use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
+use crate::chain::ArrayString;
 use crate::common::WasmTimestamp;
 use crate::credential::WasmCredential;
 use crate::credential::WasmPresentation;
@@ -91,6 +93,19 @@ impl WasmDocument {
   #[wasm_bindgen(getter)]
   pub fn controller(&self) -> Option<WasmDID> {
     self.0.controller().cloned().map(WasmDID::from)
+  }
+
+  /// Returns the `Document` alsoKnownAs set.
+  ///
+  /// NOTE: this returns a clone of the set.
+  #[wasm_bindgen(getter)]
+  pub fn also_known_as(&self) -> ArrayString {
+    self.0.also_known_as()
+      .iter()
+      .map(|url| url.to_string())
+      .map(JsValue::from)
+      .collect::<js_sys::Array>()
+      .unchecked_into::<ArrayString>()
   }
 
   // ===========================================================================

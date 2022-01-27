@@ -864,6 +864,7 @@ with the given Document.
     * _instance_
         * [.id](#Document+id) ⇒ [<code>DID</code>](#DID)
         * [.controller](#Document+controller) ⇒ [<code>DID</code>](#DID) \| <code>undefined</code>
+        * [.also_known_as](#Document+also_known_as) ⇒ <code>Array.&lt;string&gt;</code>
         * [.metadata](#Document+metadata) ⇒ [<code>DocumentMetadata</code>](#DocumentMetadata)
         * [.metadataCreated](#Document+metadataCreated) ⇒ [<code>Timestamp</code>](#Timestamp)
         * [.metadataCreated](#Document+metadataCreated)
@@ -933,6 +934,14 @@ Returns the DID Document `id`.
 
 ### document.controller ⇒ [<code>DID</code>](#DID) \| <code>undefined</code>
 Returns the `IotaDocument` controller if one exists.
+
+**Kind**: instance property of [<code>Document</code>](#Document)  
+<a name="Document+also_known_as"></a>
+
+### document.also\_known\_as ⇒ <code>Array.&lt;string&gt;</code>
+Returns the `Document` alsoKnownAs set.
+
+NOTE: this returns a clone of the set.
 
 **Kind**: instance property of [<code>Document</code>](#Document)  
 <a name="Document+metadata"></a>
