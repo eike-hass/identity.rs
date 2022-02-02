@@ -31,8 +31,9 @@ runs:
     - name: Determine since arg
       shell: bash
       run: |
-        if [[ ${{ inputs.previous-release }} != '' ]]; then
-          SINCE_ARG="--since-tag ${{ inputs.previous-release }}"
+        PREVIOUS_RELEASE=${{ inputs.previous-release }}
+        if [[ $PREVIOUS_RELEASE != '' ]]; then
+          SINCE_ARG="--since-tag $PREVIOUS_RELEASE"
         fi
         echo SINCE_ARG=$SINCE_ARG
         echo SINCE_ARG=$SINCE_ARG >> $GITHUB_ENV
