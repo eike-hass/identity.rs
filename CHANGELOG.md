@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.6.0-dev.3](https://github.com/eike-hass/identity.rs/tree/v0.6.0-dev.3) (2022-02-02)
+
+[Full Changelog](https://github.com/eike-hass/identity.rs/compare/v0.6.0-dev.2...v0.6.0-dev.3)
+
+### Patch
+
+- Chore/wasm document methods [\#7](https://github.com/eike-hass/identity.rs/pull/7)
+
 ## [v0.6.0-dev.2](https://github.com/eike-hass/identity.rs/tree/v0.6.0-dev.2) (2022-02-02)
 
 [Full Changelog](https://github.com/eike-hass/identity.rs/compare/v0.6.0-dev.1...v0.6.0-dev.2)
