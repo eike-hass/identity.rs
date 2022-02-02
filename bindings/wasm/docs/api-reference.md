@@ -863,6 +863,8 @@ with the given Document.
     * [new Document(keypair, network, fragment)](#new_Document_new)
     * _instance_
         * [.id](#Document+id) ⇒ [<code>DID</code>](#DID)
+        * [.controller](#Document+controller) ⇒ [<code>DID</code>](#DID) \| <code>undefined</code>
+        * [.also_known_as](#Document+also_known_as) ⇒ <code>Array.&lt;string&gt;</code>
         * [.metadata](#Document+metadata) ⇒ [<code>DocumentMetadata</code>](#DocumentMetadata)
         * [.metadataCreated](#Document+metadataCreated) ⇒ [<code>Timestamp</code>](#Timestamp)
         * [.metadataCreated](#Document+metadataCreated)
@@ -890,6 +892,7 @@ with the given Document.
         * [.toJSON()](#Document+toJSON) ⇒ <code>any</code>
     * _static_
         * [.fromVerificationMethod(method)](#Document.fromVerificationMethod) ⇒ [<code>Document</code>](#Document)
+        * [.isSigningMethodType(method_type)](#Document.isSigningMethodType) ⇒ <code>boolean</code>
         * [.verifyDocument(signed, signer)](#Document.verifyDocument)
         * [.verifyRootDocument(document)](#Document.verifyRootDocument)
         * [.diffIndex(message_id)](#Document.diffIndex) ⇒ <code>string</code>
@@ -925,6 +928,20 @@ Arguments:
 
 ### document.id ⇒ [<code>DID</code>](#DID)
 Returns the DID Document `id`.
+
+**Kind**: instance property of [<code>Document</code>](#Document)  
+<a name="Document+controller"></a>
+
+### document.controller ⇒ [<code>DID</code>](#DID) \| <code>undefined</code>
+Returns the `IotaDocument` controller if one exists.
+
+**Kind**: instance property of [<code>Document</code>](#Document)  
+<a name="Document+also_known_as"></a>
+
+### document.also\_known\_as ⇒ <code>Array.&lt;string&gt;</code>
+Returns the `Document` alsoKnownAs set.
+
+NOTE: this returns a clone of the set.
 
 **Kind**: instance property of [<code>Document</code>](#Document)  
 <a name="Document+metadata"></a>
@@ -1201,7 +1218,8 @@ Serializes a `Document` object as a JSON object.
 <a name="Document.fromVerificationMethod"></a>
 
 ### Document.fromVerificationMethod(method) ⇒ [<code>Document</code>](#Document)
-Creates a new DID Document from the given `VerificationMethod`.
+Creates a new DID Document from the given `VerificationMethod`, inserting it as the
+default capability invocation method.
 
 NOTE: the generated document is unsigned, see `Document::signSelf`.
 
@@ -1210,6 +1228,17 @@ NOTE: the generated document is unsigned, see `Document::signSelf`.
 | Param | Type |
 | --- | --- |
 | method | [<code>VerificationMethod</code>](#VerificationMethod) | 
+
+<a name="Document.isSigningMethodType"></a>
+
+### Document.isSigningMethodType(method_type) ⇒ <code>boolean</code>
+Returns whether the given `MethodType` can be used to sign document updates.
+
+**Kind**: static method of [<code>Document</code>](#Document)  
+
+| Param | Type |
+| --- | --- |
+| method_type | [<code>MethodType</code>](#MethodType) | 
 
 <a name="Document.verifyDocument"></a>
 

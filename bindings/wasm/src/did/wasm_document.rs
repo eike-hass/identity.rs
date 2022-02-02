@@ -16,14 +16,16 @@ use identity::iota::IotaDocument;
 use identity::iota::IotaVerificationMethod;
 use identity::iota::MessageId;
 use identity::iota::NetworkName;
+use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
+use crate::chain::ArrayString;
 use crate::common::WasmTimestamp;
 use crate::credential::WasmCredential;
 use crate::credential::WasmPresentation;
 use crate::crypto::KeyPair;
 use crate::crypto::WasmSignatureOptions;
-use crate::did::WasmDID;
+use crate::did::{WasmDID, WasmMethodType};
 use crate::did::WasmDIDUrl;
 use crate::did::WasmDiffMessage;
 use crate::did::WasmDocumentMetadata;
@@ -66,7 +68,8 @@ impl WasmDocument {
       .wasm_result()
   }
 
-  /// Creates a new DID Document from the given `VerificationMethod`.
+  /// Creates a new DID Document from the given `VerificationMethod`, inserting it as the
+  /// default capability invocation method.
   ///
   /// NOTE: the generated document is unsigned, see `Document::signSelf`.
   #[wasm_bindgen(js_name = fromVerificationMethod)]
@@ -84,6 +87,25 @@ impl WasmDocument {
   #[wasm_bindgen(getter)]
   pub fn id(&self) -> WasmDID {
     WasmDID(self.0.id().clone())
+  }
+
+  /// Returns the `IotaDocument` controller if one exists.
+  #[wasm_bindgen(getter)]
+  pub fn controller(&self) -> Option<WasmDID> {
+    self.0.controller().cloned().map(WasmDID::from)
+  }
+
+  /// Returns the `Document` alsoKnownAs set.
+  ///
+  /// NOTE: this returns a clone of the set.
+  #[wasm_bindgen(getter)]
+  pub fn also_known_as(&self) -> ArrayString {
+    self.0.also_known_as()
+      .iter()
+      .map(|url| url.to_string())
+      .map(JsValue::from)
+      .collect::<js_sys::Array>()
+      .unchecked_into::<ArrayString>()
   }
 
   // ===========================================================================
@@ -117,6 +139,12 @@ impl WasmDocument {
   #[wasm_bindgen(js_name = removeMethod)]
   pub fn remove_method(&mut self, did: WasmDIDUrl) -> Result<()> {
     self.0.remove_method(did.0).wasm_result()
+  }
+
+  /// Returns whether the given `MethodType` can be used to sign document updates.
+  #[wasm_bindgen(js_name = isSigningMethodType)]
+  pub fn is_signing_method_type(method_type: &WasmMethodType) -> bool {
+    IotaDocument::is_signing_method_type(method_type.0)
   }
 
   /// Returns a copy of the first `VerificationMethod` with a capability invocation relationship
