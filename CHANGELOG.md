@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.6.0-dev.4](https://github.com/eike-hass/identity.rs/tree/v0.6.0-dev.4) (2022-02-02)
+
+[Full Changelog](https://github.com/eike-hass/identity.rs/compare/v0.6.0-dev.3...v0.6.0-dev.4)
+
+### Patch
+
+- fix version [\#9](https://github.com/eike-hass/identity.rs/pull/9)
+
 ## [v0.6.0-dev.3](https://github.com/eike-hass/identity.rs/tree/v0.6.0-dev.3) (2022-02-02)
 
 [Full Changelog](https://github.com/eike-hass/identity.rs/compare/v0.6.0-dev.2...v0.6.0-dev.3)
