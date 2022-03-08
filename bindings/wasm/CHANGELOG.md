@@ -1,5 +1,9 @@
 # Changelog
 
+## [wasm-v0.5.0](https://github.com/eike-hass/identity.rs/tree/wasm-v0.5.0) (2022-03-08)
+
+[Full Changelog](https://github.com/eike-hass/identity.rs/compare/wasm-v0.4.0...wasm-v0.5.0)
+
 ## [wasm-v0.4.0](https://github.com/eike-hass/identity.rs/tree/wasm-v0.4.0) (2021-11-01)
 
 [Full Changelog](https://github.com/eike-hass/identity.rs/compare/360bf5ce64a7f418249cdeadccb22b9aea7daeb6...wasm-v0.4.0)
