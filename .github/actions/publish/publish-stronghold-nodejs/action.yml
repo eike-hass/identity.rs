@@ -43,6 +43,7 @@ runs:
 
     - name: Publish
       shell: sh
+      working-directory: bindings/stronghold-nodejs
       env:
         NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
       # will publish 'latest' tag if no tag is passed
