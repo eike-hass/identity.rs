@@ -52,6 +52,7 @@ jobs:
     uses: eike-hass/identity.rs/.github/workflows/shared-build-and-test-stronghold-nodejs.yml@dev
     with:
       input-artifact-name: identity-wasm-bindings-build
+      upload-binaries-as-artifacts: true
 
   release-stronghold-nodejs:
     if: ${{ needs.call-create-release-workflow.outputs.is-release }}
