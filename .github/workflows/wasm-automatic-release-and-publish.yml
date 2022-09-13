@@ -12,11 +12,11 @@ jobs:
   call-create-release-workflow:
     if: github.event.pull_request.merged == true
     # owner/repository of workflow has to be static, see https://github.community/t/env-variables-in-uses/17466
-    uses: iotaledger/identity.rs/.github/workflows/shared-release.yml@dev
+    uses: eike-hass/identity.rs/.github/workflows/shared-release.yml@dev
     with:
       changelog-config-path: ./bindings/wasm/.github_changelog_generator
-      dev-tag-regex: ^wasm-v[0-9]+\.[0-9]+\.[0-9]+-(dev)\.\d*$
-      main-tag-regex: ^wasm-v[0-9]+\.[0-9]+\.[0-9]+$
+      pre-release-tag-regex: ^wasm-v[0-9]+\.[0-9]+\.[0-9]+-(?<pre_release>\w+)\.\d+$
+      main-release-tag-regex: ^wasm-v[0-9]+\.[0-9]+\.[0-9]+$
       create-github-release: false
     secrets:
       GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -26,7 +26,7 @@ jobs:
     needs: call-create-release-workflow
     if: ${{ needs.call-create-release-workflow.outputs.is-release }}
     # owner/repository of workflow has to be static, see https://github.community/t/env-variables-in-uses/17466
-    uses: iotaledger/identity.rs/.github/workflows/shared-build-wasm.yml@dev
+    uses: eike-hass/identity.rs/.github/workflows/shared-build-wasm.yml@dev
     with:
       output-artifact-name: identity-wasm-bindings-build
 
@@ -42,7 +42,7 @@ jobs:
         with:
           input-artifact-name: identity-wasm-bindings-build
           npm-token: ${{ secrets.NPM_TOKEN }}
-          tag: ${{ needs.call-create-release-workflow.outputs.is-dev-release && 'dev' }}
+          tag: ${{ needs.call-create-release-workflow.outputs.is-pre-release && needs.call-create-release-workflow.outputs.pre-release-identifier }}
 
   # build-stronghold-nodejs:
   #   needs: build-wasm
@@ -66,5 +66,5 @@ jobs:
   #       uses: './.github/actions/publish/publish-stronghold-nodejs'
   #       with:
   #         npm-token: ${{ secrets.NPM_TOKEN }}
-  #         tag: ${{ needs.call-create-release-workflow.outputs.is-dev-release && 'dev' }}
+  #         tag: ${{ needs.call-create-release-workflow.outputs.is-pre-release && needs.call-create-release-workflow.outputs.pre-release-identifier }}
   #         input-artifact-name: identity-stronghold-nodejs-bindings-build
